@@ -6,12 +6,19 @@ net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 0
 
 
+# игнорирования транзитных ICMP
+
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+
+# Для защиты от SYN-flood 
+net.ipv4.tcp_syncookies = 1
+
 # Usually SIP uses TCP or UDP to carry the SIP signaling messages over the internet (<=> TCP/UDP sockets).
 # The receive buffer (socket receive buffer) holds the received data until it is read by the application.
 # The send buffer (socket transmit buffer) holds the data until it is read by the underling protocol in the network stack.
 
 net.core.rmem_max = 67108864
-
 net.core.wmem_max = 33554432
 
 net.core.rmem_default = 31457280
@@ -30,108 +37,130 @@ net.ipv4.tcp_mem = 786432 1048576 26777216
 # Increase the maximum amount of option memory buffers
 net.core.optmem_max = 25165824
 
+Этот параметр хотел бы абсудить
+#net.ipv4.ip_forward = 0
 
-# Disable TCP timestamp (RFC 1321): TCP timestamp feature allows round trip time measurement (<=>  Adding 8 bytes to TCP header).
-# To avoid this overhead we disable this feature:
-net.ipv4.tcp_timestamps = 0
+Далее нам необходимо отключить прием маршрутов для того, чтобы нам не подсунули неправильные маршруты. 
+Злоумышленник может попытаться подсунуть поддельные маршруты для того, 
+чтобы перенаправить весть трафик через узел, который он контролирует (атака Man In The Middle).
 
-# Enable window scaling:
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+
+#включим масштабирование окна TCP, тем самым мы увеличим объем данных, передаваемых получателю:
 net.ipv4.tcp_window_scaling = 1
 
-# Disable select acknowledgements (SACK):
-net.ipv4.tcp_sack = 1
+#размер очереди для каждого слушателя отвечает приложение, есть ограничение на количество соединений, которые могут находиться в очереди.
+#Размером очереди управляют два параметра:
+1) параметр backlog в функции listen() и 
+2) параметр ядра net.core.somaxconn, задающий максимальный размер очереди
 
-# Disable cache metrics so the initial conditions of the closed connections will not be saved to be used in near future connections:
-net.ipv4.tcp_no_metrics_save = 1
-
-# Tune the value of "backlog" (maximum queue length of pending connections "Waiting Acknowledgment"):
+# Настройте значение "backlog" (максимальная длина очереди ожидающих соединений "Waiting Acknowledgment")
 net.ipv4.tcp_max_syn_backlog = 300000
 
-# Set the value of somaxconn. This is the Max value of the backlog. The default value is 128.
-# If the backlog is greater than somaxconn, it will truncated to it.
-net.core.somaxconn = 65535
+# Установите значение somaxconn. Это максимальное значение отставания. Значение по умолчанию равно 128.
+# Если отставание больше, чем somaxconn, оно будет усечено до этого значения.
+net.core.somaxconn = 4096
 
-# The kernel parameter "netdev_max_backlog" is the maximum size of the receive queue.
+# Параметр ядра "netdev_max_backlog" - это максимальный размер очереди приема.
 net.core.netdev_max_backlog = 300000
 
-# TIME_WAIT TCP socket state is the state where the socket is closed but waiting to handle the packets which are still in the network.
-# The parameter tcp_max_tw_buckets is the maximum number of sockets in TIME_WAIT state.
-# After reaching this number the system will start destroying the socket in this state.
-# Increase the tcp-time-wait buckets pool size to prevent simple DOS attacks
+
+
+# Состояние TCP-сокета TIME_WAIT - это состояние, когда сокет закрыт, но ожидает обработки пакетов, которые все еще находятся в сети.
+# Параметр tcp_max_tw_buckets - это максимальное количество сокетов в состоянии TIME_WAIT.
+# После достижения этого числа система начнет уничтожать сокеты в этом состоянии.
+# Увеличьте размер пула tcp-time-wait buckets для предотвращения простых DOS-атак.
+
+Увеличим возможное количество сокетов в состоянии TIME_WAIT
 net.ipv4.tcp_max_tw_buckets = 1440000
+
+Разрешаем быструю утилизацию сокетов находящихся в состоянии TIME_WAIT
 net.ipv4.tcp_tw_recycle = 1
+
+
+Включаем tcp_timestamps иначе не будет работать опция tcp_tw_reuse описанная ниже
+net.ipv4.tcp_timestamps = 1
+
+Включаем механизм разрешающий использовать уже существующие сокеты, которые находятся в состоянии TIME_WAIT, если это не повредит безопасности.
 net.ipv4.tcp_tw_reuse = 1
 
-# How often the keepalive packets will be sent to keep the connection alive
-# Set the keep-alives to less than 600 seconds to ensure that connections
-# are refreshed before the GCP timeout occurs
+Уменьшаем время пребывания сокета в состоянии FIN-WAIT-2 ( на астре сейчас вроде 20)
+net.ipv4.tcp_fin_timeout = 14
+
+
+# Как часто будут отправляться пакеты keepalive для поддержания соединения.
+# Установите время keep-alives менее 600 секунд, чтобы гарантировать, что соединения
+# обновляются до наступления тайм-аута .
 net.ipv4.tcp_keepalive_time = 60
 net.ipv4.tcp_keepalive_probes = 5
 # time to wait for a reply on each keepalive probe
 net.ipv4.tcp_keepalive_intvl = 60
 
-# how many times to retry before killing an alive TCP connection
+# сколько раз нужно повторить попытку, прежде чем уничтожить живое TCP-соединение
 net.ipv4.tcp_retries2 = 5
 
-# how many times to retransmit the initial SYN packet
+# сколько раз повторно передавать начальный SYN-пакет
 net.ipv4.tcp_syn_retries = 5
 
-# Decrease the time default value for tcp_fin_timeout connection
-net.ipv4.tcp_fin_timeout = 15
 
-# check if the forwarding is necessary for rtprngine and rtpproxy
-#net.ipv4.ip_forward=1
+# необходима ли переадресация для rtprngine и rtpproxy
+net.ipv4.ip_forward=1
 
-# change the maximum number of open files
-# be sure that /proc/sys/fs/inode-max is 3-4 times the new value of
-# /proc/sys/fs/file-max, or you will run out of inodes.
-# The upper limit on fs.file-max is recorded in fs.nr_open (which is 1024*1024)
-fs.file-max = 500000
+# измените максимальное количество открытых файлов
+# убедитесь, что /proc/sys/fs/inode-max в 3-4 раза больше нового значения
+# /proc/sys/fs/file-max, иначе у вас закончатся inodes.
+# Верхний предел для fs.file-max записывается в fs.nr_open (который равен 1024*1024)
+короче надо считать , до лимитов пока недобрался  так что пока закоментим 
+#fs.file-max = 500000
 
-# The value 0 makes the kernel swap only to avoid out of memory condition.
-# Do less swapping
+У файла подкачки существуют параметры, которые сообщают ОС, как часто его нужно использовать.
+Это явление называется «свопингом» и может иметь значение в пределах 0 - 100. Если это значение ближе к 100, ядро будет перемещать в раздел подкачки 
+больше информации чтобы освободить память. При значениях ближе к нулю, система будет использовать подкачку только при крайней необходимости.
+К примеру, в версии Ubuntu Linux для рабочего стола устанавливается параметр 60, а в серверных редакциях операционной системы - 1. 
+Для того чтобы проверить, какой параметр используется в нашей ОС, вводим в терминал такую команду:
 vm.swappiness = 10
 vm.dirty_ratio = 60
 vm.dirty_background_ratio = 2
 
-# The default operating system limits on mmap counts is likely to be too low
+# Ограничения операционной системы по умолчанию на количество mmap, вероятно, слишком малы.
+# Колличество счётчиков  системных вызовов mmap
 # used by vmtouch
 vm.max_map_count=262144
 
-# the maximum size (in bytes) of a single shared segment that a Linux process can allocate in its virtual address space.
-# 1/2 of physical RAM,  shared memory segment theoretically is 2^64bytes. This is correspond to all physical RAM that you have.
-kernel.shmmax = 1073741824
+# максимальный размер (в байтах) одного разделяемого сегмента, который процесс Linux может выделить в своем виртуальном адресном пространстве.
+# 1/2 физической оперативной памяти, теоретически сегмент общей памяти составляет 2^64 байта. Это соответствует всей физической оперативной памяти, которая у вас есть.
+kernel.shmmax = 2073741824
 
 # total port range
-net.ipv4.ip_local_port_range = 1024 65535
+# надо согласовывать
+#net.ipv4.ip_local_port_range = 1024 65535
 
-
+# настройка символических ссылок оставляю как в системе 
 # Provide protection from ToCToU races
-fs.protected_hardlinks=1
-
+#fs.protected_hardlinks=1
 # Provide protection from ToCToU races
-fs.protected_symlinks=1
+#fs.protected_symlinks=1
 
-# Make locating kernel addresses more difficult
+# Если установить параметр kernel.kptr_restrict в значение 1, то адреса символов ядра в файле /proc/kallsyms будут скрыты от обычных пользователей без 
+# привилегии CAP_SYSLOG. Это усложнит динамическое разрешение адресов/символов в эксплойтов ядра  
+# Значение 1  в убнте  по умолчанию чтоит
 kernel.kptr_restrict=1
 
 # Set ptrace protections
+#Системный вызов ptrace(2) позволяет одному процессу ("трассировщику") наблюдать за выполнением другого процесса, управлять им, а также получить доступ к его памяти и регистрам.
+#Вызов ptrace обычно используется в программах-отладчиках вроде gdb, strace, perf или reptyr.
+#Тем не менее, вредоносные программы с помощью данного системного вызова также могут получать доступ к данным и перехватывать управление процессами.
+#В Нашей Ubuntu по умолчанию включён модуль LSM, в котором задан параметр ядра kernel.yama.ptrace_scope. Параметр установлен в значение 1 (restricted), что не даёт трассировщику
+#выполнять вызов ptrace вне определённой зоны доступа. Исключение составляют только трассировщики, запущенные в привилегированном режиме или с capability CAP_SYS_PTRACE.
+
 kernel.yama.ptrace_scope=1
 
 # Set perf only available to root
+# недобрался до этой функции
 kernel.perf_event_paranoid=2
 
 
-# Turn on SYN-flood protections.  Starting with 2.6.26, there is no loss
-# of TCP functionality/features under normal conditions.  When flood
-# protections kick in under high unanswered-SYN load, the system
-# should remain more stable, with a trade off of some loss of TCP
-# functionality/features (e.g. TCP Window scaling).
-net.ipv4.tcp_syncookies=1
-
-# Ignore source-routed packets
-net.ipv4.conf.all.accept_source_route=0
-net.ipv4.conf.default.accept_source_route=0
 
 # Ignore ICMP redirects from non-GW hosts
 net.ipv4.conf.all.accept_redirects=0
@@ -139,15 +168,16 @@ net.ipv4.conf.default.accept_redirects=0
 net.ipv4.conf.all.secure_redirects=1
 net.ipv4.conf.default.secure_redirects=1
 
-# Don't pass traffic between networks or act as a router
-net.ipv4.ip_forward=0
-net.ipv4.conf.all.send_redirects=0
-net.ipv4.conf.default.send_redirects=0
 
-# Turn on Source Address Verification in all interfaces to
-# prevent some spoofing attacks.
-net.ipv4.conf.all.rp_filter=1
-net.ipv4.conf.default.rp_filter=1
+
+# Включите проверку исходных адресов на всех интерфейсах, чтобы
+# предотвратить некоторые атаки спуфинга.
+# проверку обратного маршрута, чтобы защититься от спуфинга. 
+# Однако, если у вас используется несимметричная маршрутизация (да, надо хорошо знать свою сеть), 
+# то лучше эти опции не включать:  ( под вопросом так как мы не знаем какие маршруты  перед нами)
+
+#net.ipv4.conf.all.rp_filter=1
+#net.ipv4.conf.default.rp_filter=1
 
 # Ignore ICMP broadcasts to avoid participating in Smurf attacks
 net.ipv4.icmp_echo_ignore_broadcasts=1
@@ -160,9 +190,13 @@ net.ipv4.conf.all.log_martians=1
 net.ipv4.conf.default.log_martians=1
 
 # RFC 1337 fix
+# Там можно закопаться  в крации решает проблему с устаревшими дубликатами TIME-WAIT защищает от атак https://datatracker.ietf.org/doc/html/rfc1337
+# По умолчанию в убунте выключена
 net.ipv4.tcp_rfc1337=1
 
 # Addresses of mmap base, heap, stack and VDSO page are randomized
+#Рандомизация адресного пространства это функция увеличивающая безопасность вашей системы. Она защищает от атак на переполнение буфера.
+#По умолчанию включена.
 kernel.randomize_va_space=2
 
 # Reboot the machine soon after a kernel panic.
